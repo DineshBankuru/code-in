@@ -4,7 +4,8 @@ const mongoose = require("mongoose");
 const connectDB = require("./db");
 const createBookModel = require("./models/DynamicBookModel");
 const cors = require("cors");
-
+const wrapAsync = require("./utils/wrapAsync");
+const ExpressError = require("./utils/ExpressError");
 require("dotenv").config();
 
 const app = express();
@@ -35,8 +36,9 @@ app.get("/", function (req, res) {
   // res.render("home");
 });
 
-app.get("/subjects", async function (req, res) {
-  try {
+app.get(
+  "/subjects",
+  wrapAsync(async (req, res) => {
     const collections = await mongoose.connection.db
       .listCollections()
       .toArray();
@@ -56,15 +58,14 @@ app.get("/subjects", async function (req, res) {
     }
 
     res.status(200).json(data);
-  } catch (err) {
-    res.status(500).send(err);
-  }
-});
+  })
+);
 
-app.get("/subjects/:subject_name", async function (req, res) {
-  const subjectName = req.params.subject_name; // Extract the subject_name from the route parameter
+app.get(
+  "/subjects/:subject_name",
+  wrapAsync(async (req, res) => {
+    const subjectName = req.params.subject_name; // Extract the subject_name from the route parameter
 
-  try {
     // Create the model for the specific collection (subject)
     const BookModel = createBookModel(subjectName);
 
@@ -76,24 +77,20 @@ app.get("/subjects/:subject_name", async function (req, res) {
 
     // If no books are found, respond accordingly
     if (!books || books.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No books found for the specified subject" });
+      throw new ExpressError("No books found for the specified subject", 404);
     }
 
     // Send the books data as JSON to the frontend
     res.status(200).json({ subject: subjectName, booksData: books });
-  } catch (err) {
-    console.error("Error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  })
+);
 
-app.get("/books/:book_name", async function (req, res) {
-  const bookName = req.params.book_name;
-  const subjectName = req.query.subject_name;
-  //console.log("Hello", subjectName);
-  try {
+app.get(
+  "/books/:book_name",
+  wrapAsync(async (req, res) => {
+    const bookName = req.params.book_name;
+    const subjectName = req.query.subject_name;
+    //console.log("Hello", subjectName);
     // Get the model for the specified subject
     const BookModel = createBookModel(subjectName);
     console.log(bookName);
@@ -104,7 +101,7 @@ app.get("/books/:book_name", async function (req, res) {
 
     // If the book is not found, return 404 status
     if (!book) {
-      return res.status(404).json({ message: "Book not found" });
+      throw new ExpressError("Book not found", 404);
     }
 
     // Send the book data as a JSON response to the frontend
@@ -114,13 +111,17 @@ app.get("/books/:book_name", async function (req, res) {
       bookName: book.name, // Optionally add other fields as needed
       subject: subjectName, // Optionally add more metadata if needed
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  })
+);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  let { statusCode = 500, message = "Something went wrong!" } = err;
+  res.status(statusCode).json({ message, error: err.message });
 });
 
 // Start Server
-app.listen(5000, function () {
+app.listen(5000, () => {
   console.log("Server started on port 5000");
 });
